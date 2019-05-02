@@ -157,8 +157,8 @@ void endThread() {
 }
 
 //TODO: Try to double buffer top and bot
-u8 frameBufferCacheFirst[TOPSIZE*3];
-u8 frameBufferCacheSecond[TOPSIZE*3];
+u8 frameBufferCacheFirst[TOPSIZE*4];
+u8 frameBufferCacheSecond[TOPSIZE*4];
 u8 frameBufferCacheSend[TOPSIZE*4];
 
 ///Pixel processing functions
@@ -317,7 +317,7 @@ void sendDebug(bool isTop, struct sock_ctx *ctx) {
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     char buf[4];
     strncpy(buf, isTop ? "Top" : "Bot", 4);
-    soc_send(ctx->sockfd, buf, 4, 0);
+    soc_send(ctx->sockfd, buf, 3, 0);
     soc_send(ctx->sockfd, &bpp, 4, 0);
     soc_send(ctx->sockfd, &pa, 4, 0);
 }
@@ -342,20 +342,18 @@ typedef struct DmaConfig {
 
 //Copies the Frame Buffer via DMA
 void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
-    //u8 dmaConfig[24] = { -1, 0, 4 };
-
     DmaSubConfig subcfg;
-    subcfg.peripheral_id = 0xFF;
-    subcfg.allowed_burst_sizes = 1 | 2 | 4 | 8;
+    subcfg.peripheral_id = 0xFF;                // Don't care copy from ram
+    subcfg.allowed_burst_sizes = 1 | 2 | 4 | 8; // allow all
     subcfg.gather_granule_size = 0x80;
     subcfg.gather_stride = 0;
     subcfg.scatter_granule_size = 0x80;
     subcfg.scatter_stride = 0;
 
     DmaConfig config;
-    config.channel_sel = -1;
-    config.endian_swap_size = 0;
-    config.flags = 1 << 2 | 1 << 6 | 1 << 7;
+    config.channel_sel = -1;                    //don't care
+    config.endian_swap_size = 0;                //don't swap
+    config.flags = 1 << 2 | 1 << 6 | 1 << 7;    //Block, src_ram, dst_ram
     config.src_cfg = subcfg;
     config.dst_cfg = subcfg;
 
@@ -383,13 +381,15 @@ void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
 
 //To deal with blank pixels in the Framebuffer (e.g. Mario Kart) WIP
 void skipBytes(u32 screenWidth, u8 *src, u8 *dest, u32 bytesInColumn, u32 blankInColumn) {
+    svcSleepThread(400000);
     for(u32 i = 0; i < screenWidth; i++) {
-        for(u32 j = 0; j < bytesInColumn; j++) {
-            *dest = *src;
-            dest += 1;
-            src += 1;
+        for(u32 j = 0; j < bytesInColumn/4; j++) {
+            ((u32*)dest)[j] = ((u32*)src)[j];
         }
-        src += blankInColumn;
+        src += bytesInColumn+blankInColumn; //
+        dest += bytesInColumn;
+        int a = blankInColumn;
+        blankInColumn = a;
     }
 }
 
@@ -406,16 +406,16 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
     u32 screenWidth = isTop ? TOPW : BOTW;
     u32 size = stride * screenWidth;
     u32 bytesInColumn = bpp*HEIGHT;
-    //u32 blankInColumn = bytesInColumn - stride;
+    u32 blankInColumn = stride - bytesInColumn;
     u32 realSize = bytesInColumn * screenWidth;
 
-    //copyFrameBuf(fbref, isTop, size);
-    copyFrameBufDMA(fbref, isTop, size);
+    copyFrameBuf(fbref, isTop, size);
+    //copyFrameBufDMA(fbref, isTop, size);
 
-    //if(size == realSize) {
-    //    skipBytes(screenWidth, fbref, lastFrame, bytesInColumn, blankInColumn);
-    //    fbref = lastFrame;
-    //}
+    if(size != realSize) {
+        skipBytes(screenWidth, fbref, lastFrame, bytesInColumn, blankInColumn);
+        fbref = lastFrame;
+    }
 
     if(isGraySacle) {bpp = makeGrayScale(isTop, fbref, bpp, format); format = 5;}
 
@@ -435,6 +435,7 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
 
     userNoCompress = false;
     closeHandleIfProcessHangs();
+    svcSleepThread(200000);
 }
 
 //Networking functions

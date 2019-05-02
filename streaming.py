@@ -99,9 +99,10 @@ def getScreen(sock, oldFrame, lastbpp):
     #print(header)
     #print("BPP: ", bytesPerPixel)
     #print("First 10 bytes: ", data[:4*4+4])
-    print(currentBlocksize)
+    print("BlockSize: ", currentBlocksize)
     print("Data length: ", len(data))
     
+    #compressed
     if pixelFormat == 6:
         oldFrame = bytearray(oldFrame)
         view = memoryview(oldFrame)
@@ -117,6 +118,10 @@ def getScreen(sock, oldFrame, lastbpp):
         print("Package not complete...")
         data += bytearray(fullsize-len(data))
     
+    #uncompressed
+    #file = open("frame.bin", "wb")
+    #file.write(data)
+    #sys.exit(1)
     return bytes(data),bytesPerPixel
 
 def sendCapturePacket(sock, isTop):
