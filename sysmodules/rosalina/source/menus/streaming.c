@@ -7,6 +7,7 @@
 #include "sock_util.h"
 #include <3ds/gpu/gx.h>
 #include <3ds/gfx.h>
+#include <3ds/services/apt.h>
 
 
 #define HEIGHT 240
@@ -67,6 +68,7 @@ bool isGraySacle = false;
 bool isSecondFrameBuffer = false;
 bool doCompress = false;
 bool userNoCompress = true;
+bool isNew3DS = false;
 u32 currentBlockSize = 8;
 
 void toggleCompression(){doCompress = !doCompress;}
@@ -90,7 +92,28 @@ MyThread *testSendCreateTCPThread(void){
     return &testSendThread;
 }
 
+void showNotN3DSMessage() {
+    Draw_Lock();
+    Draw_ClearFramebuffer();
+    Draw_FlushFramebuffer();
+    Draw_Unlock();
+    do {
+        char buf[50];
+        sprintf(buf, "Old 3DS is not supported!");
+        Draw_Lock();
+        Draw_DrawString(10,10, COLOR_RED, buf);
+        Draw_FlushFramebuffer();
+        Draw_Unlock();
+    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+}
+
 void startMainThread() {
+    APT_CheckNew3DS(&isNew3DS);
+    if(!isNew3DS) {
+        showNotN3DSMessage();
+        return;
+    }
+
     if(!isStarted) {
         isStarted = true;
         commandCreateThread();
