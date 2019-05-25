@@ -15,12 +15,6 @@
 #define BOTSIZE BOTW*HEIGHT
 #define TOPSIZE TOPW*HEIGHT
 
-void nothing() {
-    do {
-        Draw_FillFramebuffer(COLOR_TITLE);
-    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
-}
-
 // Graphics information
 u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format) {
 	switch(format) {
@@ -44,16 +38,14 @@ void closeRPHandle();
 
 Menu streamingMenu = {
     "Streaming",
-    .nbItems = 8,
+    .nbItems = 6,
     {
         { "Start Stream!", METHOD, .method = &startMainThread },
         { "End Stream!", METHOD, .method = &endThread},
-        { "Nothing", METHOD, .method = &nothing},
         { "Toggle Grayscale", METHOD, .method = &toggleGrayscale},
         { "Toggle Compression", METHOD, .method = &toggleCompression},
         { "Increase Blocksize", METHOD, .method = &increaseBlockSize},
-        { "Decrease Blocksize", METHOD, .method = &decreaseBlockSize},
-        { "Close RemotePlayHandle (anti-freeze)", METHOD, .method = &closeRPHandle}
+        { "Decrease Blocksize", METHOD, .method = &decreaseBlockSize}
     }
 };
 
@@ -109,7 +101,7 @@ void startMainThread() {
         Draw_Unlock();
         do {
             char buf[50];
-            sprintf(buf, "Waiting for Wifi...");
+            sprintf(buf, "Waiting for Wifi... (Press B)");
             Draw_Lock();
             Draw_DrawString(10,10, COLOR_RED, buf);
             Draw_FlushFramebuffer();
@@ -196,7 +188,7 @@ u32 makeGrayScale(bool isTop, u8 *fb, u32 bytePerPixel, u32 format) {
 }
 
 //Copies the Frame Buffer via the CPU
-void copyFrameBuf(u8 * dest, bool isTop, u32 size) {
+void copyFrameBufCPU(u8 * dest, bool isTop, u32 size) {
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     u32 *addr = (u32 *)PA_PTR(pa);
     memcpy(dest, addr, size);
@@ -212,6 +204,7 @@ void sendFrameBufferTCP(struct sock_ctx *ctx, bool isTop, u8 *framebufferCache,
     if(fbsize > 0) soc_send(ctx->sockfd, framebufferCache, fbsize, 0);
 }
 
+//Just playing around with something
 int compressFrame( u8 *framebufferCache, u8 *lastFramebufferCache,
                     u8 *sendBuffer, u32 blockSize, u32 bytePerPixel) {
 
@@ -252,9 +245,10 @@ u32 rpGameFCRAMBase = 0;
 void closeRPHandle() {
     svcCloseHandle(rpHandleGame);
     rpHandleGame = 0;
+    rpGameFCRAMBase = 0;
 }
 
-//Prevent system from locking up during process switch
+//Prevent system from locking up when switching processes (NTR hanging at the 3DS logo)
 void closeHandleIfProcessHangs() {
     if(svcWaitSynchronization(rpHandleGame, 0) == 0) {
         closeRPHandle();
@@ -313,13 +307,17 @@ int isInFCRAM(u32 phys) {
 }
 
 void sendDebug(bool isTop, struct sock_ctx *ctx) {
-    u32 bpp = isTop ? GPU_FB_TOP_STRIDE : GPU_FB_BOTTOM_STRIDE;
+    u32 format = isTop ? GPU_FB_TOP_FMT & 7 : GPU_FB_BOTTOM_FMT & 7;
+    u32 bpp = __get_bytes_per_pixel(format);
+    u32 stride = isTop ? GPU_FB_TOP_STRIDE : GPU_FB_BOTTOM_STRIDE;
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     char buf[4];
     strncpy(buf, isTop ? "Top" : "Bot", 4);
+    
     soc_send(ctx->sockfd, buf, 3, 0);
     soc_send(ctx->sockfd, &bpp, 4, 0);
     soc_send(ctx->sockfd, &pa, 4, 0);
+    soc_send(ctx->sockfd, &stride, 4, 0);
 }
 
 typedef struct DmaSubConfig {
@@ -379,17 +377,15 @@ void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
     }
 }
 
-//To deal with blank pixels in the Framebuffer (e.g. Mario Kart) WIP
+//To skip blank pixels in the Framebuffer (e.g. Mario Kart)
 void skipBytes(u32 screenWidth, u8 *src, u8 *dest, u32 bytesInColumn, u32 blankInColumn) {
-    svcSleepThread(400000);
+    
     for(u32 i = 0; i < screenWidth; i++) {
         for(u32 j = 0; j < bytesInColumn/4; j++) {
             ((u32*)dest)[j] = ((u32*)src)[j];
         }
         src += bytesInColumn+blankInColumn; //
         dest += bytesInColumn;
-        int a = blankInColumn;
-        blankInColumn = a;
     }
 }
 
@@ -407,12 +403,14 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
     u32 size = stride * screenWidth;
     u32 bytesInColumn = bpp*HEIGHT;
     u32 blankInColumn = stride - bytesInColumn;
-    u32 realSize = bytesInColumn * screenWidth;
+    u32 realSize = bytesInColumn*screenWidth;
 
-    copyFrameBuf(fbref, isTop, size);
-    //copyFrameBufDMA(fbref, isTop, size);
-
-    if(size != realSize) {
+    //copyFrameBufCPU(fbref, isTop, size);
+    copyFrameBufDMA(fbref, isTop, size);
+    
+    svcSleepThread(400000);
+    
+    if(stride != bytesInColumn) {
         skipBytes(screenWidth, fbref, lastFrame, bytesInColumn, blankInColumn);
         fbref = lastFrame;
     }
@@ -424,10 +422,11 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
         frameDataSize = compressFrame(fbref, lastFrame, frameBufferCacheSend, currentBlockSize, bpp);
     }
 
-    if(frameDataSize != -1) {
+    if(frameDataSize == -1) {frameDataSize = realSize;} 
+    else {
         format = 6;
         fbref = frameBufferCacheSend;
-    } else {frameDataSize = realSize;}
+    }
 
     sendFrameBufferTCP(ctx, isTop, fbref, bpp, format, frameDataSize);
 
@@ -495,9 +494,6 @@ void commandThreadMain(void) {
         }
 
         while(serv.host == 0) {
-            //char hostName[20];
-            //gethostname(hostName, sizeof(hostName));
-            //gethostbyname(hostName);
             serv.host = gethostid();
             svcSleepThread(1 * 1000 * 1000 * 1000LL);
         }

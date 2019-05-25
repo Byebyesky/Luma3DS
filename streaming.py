@@ -121,10 +121,12 @@ def getScreen(sock, oldFrame, lastbpp):
         print("Package not complete...")
         data += bytearray(fullsize-len(data))
     
+    
     #uncompressed
     #file = open("frame.bin", "wb")
     #file.write(data)
     #sys.exit(1)
+    
     return bytes(data),bytesPerPixel
 
 def sendCapturePacket(sock, isTop):
