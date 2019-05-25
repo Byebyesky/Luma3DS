@@ -5,10 +5,13 @@ from enum import Enum
 import binascii
 
 WELCOME = "Connection was accepted!\x00"
-TOPSIZE = 400*240
-BOTSIZE = 320*240
-IMGTOP = (240,400)
-IMGBOT = (240,320)
+DSSCREENHEIGHT = 240
+TOPWIDTH = 400
+BOTTOMWIDTH = 320
+TOPSIZE = TOPWIDTH*DSSCREENHEIGHT
+BOTSIZE = BOTTOMWIDTH*DSSCREENHEIGHT
+IMGTOP = (DSSCREENHEIGHT,TOPWIDTH)
+IMGBOT = (DSSCREENHEIGHT,BOTTOMWIDTH)
 IP = "192.168.178.28"
 PORT = 4957
 HEADERSIZE = 9
@@ -142,7 +145,7 @@ def prepareImage(imgData, captureTop, bpp):
         img = Image.frombuffer('RGB', imgSize, imgData, 'raw', pixelformat, 0, 1)   
     
     img = img.rotate(90, 0, 1)                        
-    if WIDTH != 400:
+    if WIDTH == TOPWIDTH*2 or WIDTH == (BOTTOMWIDTH+TOPWIDTH)*2:
         img = img.resize((imgSize[1]*2, imgSize[0]*2))
     
     bufdat = img.tobytes()
@@ -161,12 +164,14 @@ if len(sys.argv) >= 1:
     pygame.init()
     FPS = 60
     DISPLAY = pygame.display.Info()
-    WIDTH = 400
-    HEIGHT = 480
+    WIDTH = TOPWIDTH
+    HEIGHT = DSSCREENHEIGHT*2
     #For Debug, start in large screen
     WIDTH = WIDTH*2
     HEIGHT = HEIGHT*2
     NAME = "3DS View"
+    SCALED = True
+    ROTATED = False
 
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption(NAME)
@@ -227,12 +232,13 @@ if len(sys.argv) >= 1:
                                 toggle = not toggle
                                 print("Alternate polling: ", toggle)
                             if event.key == pygame.K_KP_PLUS:
-                                if WIDTH == 400:
-                                    WIDTH = WIDTH*2
-                                    HEIGHT = HEIGHT*2
+                                if SCALED == False:
+                                    WIDTH = int(WIDTH*2)
+                                    HEIGHT = int(HEIGHT*2)
                                 else:
-                                    WIDTH = 400
-                                    HEIGHT = 480
+                                    WIDTH = int(WIDTH/2)
+                                    HEIGHT = int(HEIGHT/2)
+                                SCALED = not SCALED
                                 print("Setting to: ", WIDTH, HEIGHT)
                                 screen = pygame.display.set_mode((WIDTH, HEIGHT))
                             if event.key == pygame.K_UP:
@@ -255,11 +261,24 @@ if len(sys.argv) >= 1:
                             if event.key == pygame.K_c:
                                 print("Compress!")
                                 sock.send(b'\x09')
-                            if event.key == pygame.K_n:
-                                sock.send(b'\x0A')
                             if event.key == pygame.K_f:
                                 doShow = not doShow
                                 text = font.render("", True, (255,255,255))
+                            if event.key == pygame.K_n:
+                                sock.send(b'\x0A')
+                            if event.key == pygame.K_r:
+                                if ROTATED == True:
+                                    WIDTH = TOPWIDTH
+                                    HEIGHT = DSSCREENHEIGHT*2
+                                else:
+                                    WIDTH = TOPWIDTH+BOTTOMWIDTH
+                                    HEIGHT = DSSCREENHEIGHT
+                                if SCALED == True:
+                                    WIDTH = WIDTH*2
+                                    HEIGHT = HEIGHT*2
+                                ROTATED = not ROTATED
+                                screen = pygame.display.set_mode((WIDTH, HEIGHT))
+                            
                                 
                     if not stop:
                         if captureTop:
@@ -287,6 +306,8 @@ if len(sys.argv) >= 1:
                         
                         if captureTop:
                             screen.blit(imgBlit, [0,0])
+                        elif ROTATED == True:
+                            screen.blit(imgBlit, [WIDTH-imgBlit.get_width(),0])
                         else:
                             screen.blit(imgBlit, [(WIDTH-imgBlit.get_width())/2,HEIGHT/2])
                         
