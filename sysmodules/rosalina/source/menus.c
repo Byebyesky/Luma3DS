@@ -45,11 +45,10 @@
 
 Menu rosalinaMenu = {
     "Rosalina menu",
-    .nbItems = 12,
     {
-        { "Reboot", METHOD, .method = &RosalinaMenu_Reboot },
         { "Streaming", MENU, .menu = &streamingMenu },
-        { "New 3DS menu...", MENU, .menu = &N3DSMenu },
+        { "Take screenshot", METHOD, .method = &RosalinaMenu_TakeScreenshot },
+        { "Change screen brightness", METHOD, .method = &RosalinaMenu_ChangeScreenBrightness },
         { "Cheats...", METHOD, .method = &RosalinaMenu_Cheats },
         { "Process list", METHOD, .method = &RosalinaMenu_ProcessList },
         { "Debugger options...", MENU, .menu = &debuggerMenu },
@@ -59,7 +58,10 @@ Menu rosalinaMenu = {
         { "Miscellaneous options...", MENU, .menu = &miscellaneousMenu },
         { "Save settings", METHOD, .method = &RosalinaMenu_SaveSettings },
         { "Power off", METHOD, .method = &RosalinaMenu_PowerOff },
-        { "Credits", METHOD, .method = &RosalinaMenu_ShowCredits }
+        { "Reboot", METHOD, .method = &RosalinaMenu_Reboot },
+        { "Credits", METHOD, .method = &RosalinaMenu_ShowCredits },
+        { "Debug info", METHOD, .method = &RosalinaMenu_ShowDebugInfo, .visibility = &rosalinaMenuShouldShowDebugInfo },
+        {},
     }
 };
 

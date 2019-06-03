@@ -1,6 +1,22 @@
 # Luma3DS
 *Noob-proof (N)3DS "Custom Firmware"*
 
+## What is this fork
+
+Many of you probably know the NTR CFW that enabled streaming the 3DS' screen to the computer over the debugger.  
+This fork implements this functionality into rosalina.  
+It's still higly WIP and not intended for public use since framerates are quite slow.  
+But it's more stable than the NTR firmware. You can switch games and the games I tested worked flawlessly.  
+Some of the code is inspired by NTR but most of it is a complete reimplementation, because I wanted to figure out where the annoying bugs with the NTR firmware are. (e.g. 3DS hanging when switching processes)
+
+## Usage of the streaming capability
+
+1. Go to the rosalina menu->streaming->start strea
+2. Type the IP of your 3DS into the python script
+3. Install the dependencies with `pip3 install pygame pillow numpy`
+4. Start the script with `python3 streaming.py 4`
+
+
 ### What it is
 **Luma3DS** is a program to patch the system software of (New) Nintendo (2)3DS handheld consoles "on the fly", adding features such as per-game language settings, debugging capabilities for developers, and removing restrictions enforced by Nintendo such as the region lock.
 
