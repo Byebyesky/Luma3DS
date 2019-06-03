@@ -16,6 +16,7 @@ Some of the code is inspired by NTR but most of it is a complete reimplementatio
 3. Install the dependencies with `pip3 install pygame pillow numpy`
 4. Start the script with `python3 streaming.py 4`
 
+---
 
 ### What it is
 **Luma3DS** is a program to patch the system software of (New) Nintendo (2)3DS handheld consoles "on the fly", adding features such as per-game language settings, debugging capabilities for developers, and removing restrictions enforced by Nintendo such as the region lock.
