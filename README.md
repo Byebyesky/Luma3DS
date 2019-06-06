@@ -16,7 +16,8 @@ Some of the code is inspired by NTR but most of it is a complete reimplementatio
 3. Install the dependencies with `pip3 install pygame pillow numpy`
 4. Start the script with `python3 streaming.py 4`
 
-![streaming screenshot](preview.png)
+(Click the image for a video demo)
+[![Click for video demo](preview.png)](https://youtu.be/SAhSV_xUGCc)
 
 ---
 
