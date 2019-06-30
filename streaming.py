@@ -3,6 +3,7 @@ import socket, struct, sys, pygame, os, numpy
 from PIL import Image
 from enum import Enum
 import binascii
+import time
 
 WELCOME = "Connection was accepted!\x00"
 DSSCREENHEIGHT = 240
@@ -66,6 +67,7 @@ def getScreen(sock, oldFrame, lastbpp):
         try:
             nbytes = sock.recv_into(header, headerSize)
             headerSize -= nbytes
+            time.sleep(5/1000000.0)
         except socket.timeout:
             print("Timeout!!! Try again...")
             break
@@ -97,20 +99,20 @@ def getScreen(sock, oldFrame, lastbpp):
             print("Timeout!!! Try again...")
             break
     
-    print("Top: ", isTop, "Format: ", pixelFormat)
-    print("Fbsize: ", fbsize)
+    #print("Top: ", isTop, "Format: ", pixelFormat)
+    #print("Fbsize: ", fbsize)
     #print(header)
     #print("BPP: ", bytesPerPixel)
     #print("First 10 bytes: ", data[:4*4+4])
-    print("BlockSize: ", currentBlocksize)
-    print("Data length: ", len(data))
+    #print("BlockSize: ", currentBlocksize)
+    #print("Data length: ", len(data))
     
     #compressed
     if pixelFormat == 6:
         oldFrame = bytearray(oldFrame)
         view = memoryview(oldFrame)
-        if data != b'':
-            print(data[:20])
+        #if data != b'':
+        #    print(data[:20])
         for i in range(0, fbsize, currentBlocksize+4):
             offset = struct.unpack("<I", bytes([data[i], data[i+1], data[i+2],data[i+3]]))[0]
             for j in range(currentBlocksize):
@@ -319,7 +321,9 @@ if len(sys.argv) >= 1:
                         if pygame.time.get_ticks() - printTimer > 500 and doShow:
                             printTimer = pygame.time.get_ticks()
                             fps = int(clock.get_fps())
-                            txt = "Time: " + str(printTimer) + " FPS: " + str(fps)
+                            txt = ''
+                            #txt += "Time: {} ".format(str(printTimer))
+                            txt += "FPS: {}".format(str(fps))
                             text = font.render(txt, True, (255,255,255), (128,128,128))
                             #print( )
                             #pygame.display.set_caption(NAME + " FPS: " + str(fps))
