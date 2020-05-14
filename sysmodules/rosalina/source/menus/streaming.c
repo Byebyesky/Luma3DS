@@ -223,8 +223,8 @@ void sendFrameBufferTCP(struct sock_ctx *ctx, bool isTop, u8 *framebufferCache,
     char buf[9] = { 0x13, 0x37, isTop, (u8)currentBlockSize, (char)format,
                     (char)(fbsize >> 24), (char)(fbsize >> 16),
                     (char)(fbsize >> 8), (char)fbsize };
-    soc_send(ctx->sockfd, buf, sizeof(buf), 0);
-    if(fbsize > 0) soc_send(ctx->sockfd, framebufferCache, fbsize, 0);
+    socSend(ctx->sockfd, buf, sizeof(buf), 0);
+    if(fbsize > 0) socSend(ctx->sockfd, framebufferCache, fbsize, 0);
 }
 
 //Just playing around with something
@@ -337,10 +337,10 @@ void sendDebug(bool isTop, struct sock_ctx *ctx) {
     char buf[4];
     strncpy(buf, isTop ? "Top" : "Bot", 4);
     
-    soc_send(ctx->sockfd, buf, 3, 0);
-    soc_send(ctx->sockfd, &bpp, 4, 0);
-    soc_send(ctx->sockfd, &pa, 4, 0);
-    soc_send(ctx->sockfd, &stride, 4, 0);
+    socSend(ctx->sockfd, buf, 3, 0);
+    socSend(ctx->sockfd, &bpp, 4, 0);
+    socSend(ctx->sockfd, &pa, 4, 0);
+    socSend(ctx->sockfd, &stride, 4, 0);
 }
 
 typedef struct DmaSubConfig {
@@ -463,7 +463,7 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
 //Networking functions
 int acceptClient(struct sock_ctx *ctx) {
     char welcome[] = "Connection was accepted!";
-    soc_send(ctx->sockfd, welcome, sizeof(welcome), 0);
+    socSend(ctx->sockfd, welcome, sizeof(welcome), 0);
     return 0;
 }
 
@@ -491,7 +491,7 @@ void releaseClient(struct sock_server *server, struct sock_ctx *ctx) {
 int handleData(struct sock_ctx *ctx) {
     char buf[4] = {0, 0, 0, 0};
 
-    int r = soc_recv(ctx->sockfd, buf, sizeof(buf), 0);
+    int r = socRecv(ctx->sockfd, buf, sizeof(buf), 0);
     if(r == -1)
         return -1;
 
