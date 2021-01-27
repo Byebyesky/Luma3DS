@@ -17,7 +17,7 @@
 #define TOPSIZE TOPW*HEIGHT
 
 // Graphics information
-u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormats format) {
+u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format) {
 	switch(format) {
 	case GSP_RGBA8_OES:
 		return 4;
@@ -39,14 +39,14 @@ void closeRPHandle();
 
 Menu streamingMenu = {
     "Streaming",
-    .nbItems = 6,
     {
         { "Start Stream!", METHOD, .method = &startMainThread },
         { "End Stream!", METHOD, .method = &endThread},
         { "Toggle Grayscale", METHOD, .method = &toggleGrayscale},
         { "Toggle Compression", METHOD, .method = &toggleCompression},
         { "Increase Blocksize", METHOD, .method = &increaseBlockSize},
-        { "Decrease Blocksize", METHOD, .method = &decreaseBlockSize}
+        { "Decrease Blocksize", METHOD, .method = &decreaseBlockSize},
+        {},
     }
 };
 
@@ -104,7 +104,7 @@ void showNotN3DSMessage() {
         Draw_DrawString(10,10, COLOR_RED, buf);
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+    } while(!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 void startMainThread() {
@@ -129,7 +129,7 @@ void startMainThread() {
             Draw_DrawString(10,10, COLOR_RED, buf);
             Draw_FlushFramebuffer();
             Draw_Unlock();
-        } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+        } while(!(waitInput() & KEY_B) && !menuShouldExit);
     } else {
         Draw_Lock();
         Draw_ClearFramebuffer();
@@ -140,7 +140,7 @@ void startMainThread() {
             Draw_DrawString(10,10, COLOR_RED, "Thread already running!");
             Draw_FlushFramebuffer();
             Draw_Unlock();
-        } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+        } while(!(waitInput() & KEY_B) && !menuShouldExit);
     }
 }
 
@@ -168,7 +168,7 @@ void endThread() {
         Draw_DrawString(10,10, COLOR_RED, res == 0 ? "Thread successfully ended." : buf);
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+    } while(!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 //TODO: Try to double buffer top and bot
@@ -218,7 +218,7 @@ void copyFrameBufCPU(u8 * dest, bool isTop, u32 size) {
 }
 
 void sendFrameBufferTCP(struct sock_ctx *ctx, bool isTop, u8 *framebufferCache,
-                        u32 bytePerPixel, GSPGPU_FramebufferFormats format, u32 fbsize) {
+                        u32 bytePerPixel, GSPGPU_FramebufferFormat format, u32 fbsize) {
     (void)bytePerPixel;
     char buf[9] = { 0x13, 0x37, isTop, (u8)currentBlockSize, (char)format,
                     (char)(fbsize >> 24), (char)(fbsize >> 16),
@@ -297,10 +297,10 @@ Handle rpGetGameHandle() {
 	}
 
 	if (rpGameFCRAMBase == 0) {
-		if (svcFlushProcessDataCache(hProcess, (void*)0x14000000, 0x1000) == 0) {
+		if (svcFlushProcessDataCache(hProcess, (u32)0x14000000, 0x1000) == 0) {
 			rpGameFCRAMBase = 0x14000000;
 		}
-		else if (svcFlushProcessDataCache(hProcess, (void*)0x30000000, 0x1000) == 0) {
+		else if (svcFlushProcessDataCache(hProcess, (u32)0x30000000, 0x1000) == 0) {
 			rpGameFCRAMBase = 0x30000000;
 		}
 		else {
@@ -343,59 +343,41 @@ void sendDebug(bool isTop, struct sock_ctx *ctx) {
     socSend(ctx->sockfd, &stride, 4, 0);
 }
 
-typedef struct DmaSubConfig {
-    int8_t peripheral_id; // @0 If not *_IS_RAM set, this must be < 0x1E.
-    uint8_t allowed_burst_sizes; // @1 Accepted values: 4, 8, 4|8 = 12, 1|2|4|8 = 15 
-    int16_t gather_granule_size; // @2
-    int16_t gather_stride; // @4 Has to be >= 0, must not be 0 if peripheral_id == 0xFF.
-    int16_t scatter_granule_size; // @6
-    int16_t scatter_stride; // @8 Can be negative.
-} DmaSubConfig;
-
-typedef struct DmaConfig {
-    int8_t channel_sel; // @0 Selects which DMA channel to use: 0-7, -1 = don't care.
-    uint8_t endian_swap_size; // @1 Accepted values: 0=none, 2=16bit, 4=32bit, 8=64bit.
-    uint8_t flags; // @2 bit0: SRC_IS_PERIPHERAL, bit1: DST_IS_PERIPHERAL, bit2: SHALL_BLOCK, bit3: KEEP_ALIVE, bit6: SRC_IS_RAM, bit7: DST_IS_RAM
-    uint8_t padding;
-    DmaSubConfig dst_cfg;
-    DmaSubConfig src_cfg;
-} DmaConfig;
-
 //Copies the Frame Buffer via DMA
-void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
-    DmaSubConfig subcfg;
-    subcfg.peripheral_id = 0xFF;                // Don't care copy from ram
-    subcfg.allowed_burst_sizes = 1 | 2 | 4 | 8; // allow all
-    subcfg.gather_granule_size = 0x80;
-    subcfg.gather_stride = 0;
-    subcfg.scatter_granule_size = 0x80;
-    subcfg.scatter_stride = 0;
+void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) { 
+    DmaDeviceConfig subcfg;
+    subcfg.deviceId = 0xFF;                // Don't care copy from ram
+    subcfg.allowedAlignments = 1 | 2 | 4 | 8; // allow all
+    subcfg.burstSize = 0x80;
+    subcfg.burstStride = 0;
+    subcfg.transferSize = 0x80;
+    subcfg.transferStride = 0;
 
     DmaConfig config;
-    config.channel_sel = -1;                    //don't care
-    config.endian_swap_size = 0;                //don't swap
+    config.channelId = -1;                    //don't care
+    config.endianSwapSize = 0;                //don't swap
     config.flags = 1 << 2 | 1 << 6 | 1 << 7;    //Block, src_ram, dst_ram
-    config.src_cfg = subcfg;
-    config.dst_cfg = subcfg;
+    config.srcCfg = subcfg;
+    config.dstCfg = subcfg;
 
     Handle processHandle = hProcess;
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     uintptr_t addr = 0x0;
 
-    svcInvalidateProcessDataCache(CURRENT_PROCESS_HANDLE, dest, size);
+    svcInvalidateProcessDataCache(CURRENT_PROCESS_HANDLE, (u32)dest, size);
     svcCloseHandle(dmaHandle);
 	dmaHandle = 0;
 
     if (isInVRAM(pa)) {
         addr = 0x1F000000 + (pa - 0x18000000);
-        svcStartInterProcessDma(&dmaHandle, CURRENT_PROCESS_HANDLE, dest,
-                                processHandle, (void*)addr, size, &config);
+        svcStartInterProcessDma(&dmaHandle, CURRENT_PROCESS_HANDLE, (u32)dest,
+                                processHandle, (u32)addr, size, &config);
     }	else if (isInFCRAM(pa)) {
 		processHandle = rpGetGameHandle();
 		if (processHandle) {
 			addr = rpGameFCRAMBase + (pa - 0x20000000);
-            svcStartInterProcessDma(&dmaHandle, CURRENT_PROCESS_HANDLE, dest,
-                                    processHandle, (void*)addr, size, &config);
+            svcStartInterProcessDma(&dmaHandle, CURRENT_PROCESS_HANDLE, (u32)dest,
+                                    processHandle, (u32)addr, size, &config);
 		}
     }
 }
@@ -592,12 +574,12 @@ void testSendThreadMain(void) {
     {
         Draw_DrawString(10,10, COLOR_RED, buf);
         Draw_FlushFramebuffer();
-    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+    } while(!(waitInput() & KEY_B) && !menuShouldExit);
     Draw_Unlock();
 
     svcSignalEvent(sendUDPStarted);
 
-    while(!shouldStop && !terminationRequest) {
+    while(!shouldStop && !menuShouldExit) {
         getFrameBuffer(isTop, caddr, sock);
     }
 
@@ -616,7 +598,7 @@ void testSendThreadMain(void) {
     {
         Draw_DrawString(10,10, COLOR_RED, buf);
         Draw_FlushFramebuffer();
-    } while(!(waitInput() & BUTTON_B) && !terminationRequest);
+    } while(!(waitInput() & KEY_B) && !menuShouldExit);
     Draw_Unlock();
 
     MyThread_Join(&testSendThread, 5 * 1000 * 1000 * 1000LL);
@@ -631,7 +613,7 @@ int startSend(struct sock_ctx *ctx) {
 }
 
 void testSendThreadTCPMain(void) {
-    while(!shouldStop && !terminationRequest) {
+    while(!shouldStop && !menuShouldExit) {
         Result ret = 0;
         ret = server_init(&stream);
         if(ret != 0) {
