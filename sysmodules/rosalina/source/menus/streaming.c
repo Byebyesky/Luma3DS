@@ -16,26 +16,12 @@
 #define BOTSIZE BOTW*HEIGHT
 #define TOPSIZE TOPW*HEIGHT
 
-// Graphics information
-u32 __get_bytes_per_pixel(GSPGPU_FramebufferFormat format) {
-	switch(format) {
-	case GSP_RGBA8_OES:
-		return 4;
-	case GSP_BGR8_OES:
-		return 3;
-	case GSP_RGB565_OES:
-	case GSP_RGB5_A1_OES:
-	case GSP_RGBA4_OES:
-		return 2;
-	}
-	return 3;
-}
-
 void toggleGrayscale();
 void increaseBlockSize();
 void decreaseBlockSize();
 void toggleCompression();
 void closeRPHandle();
+void toggleCPUCopy();
 
 Menu streamingMenu = {
     "Streaming",
@@ -46,6 +32,7 @@ Menu streamingMenu = {
         { "Toggle Compression", METHOD, .method = &toggleCompression},
         { "Increase Blocksize", METHOD, .method = &increaseBlockSize},
         { "Decrease Blocksize", METHOD, .method = &decreaseBlockSize},
+        { "Toggle CPU copy", METHOD, .method = &toggleCPUCopy},
         {},
     }
 };
@@ -65,6 +52,7 @@ bool run = false;
 bool shouldStop = true;
 bool isTop = true;
 bool isGraySacle = false;
+bool isCPUCopy = false;
 bool isSecondFrameBuffer = false;
 bool doCompress = false;
 bool userNoCompress = true;
@@ -75,6 +63,7 @@ void toggleCompression(){doCompress = !doCompress;}
 void toggleGrayscale() {isGraySacle = !isGraySacle;}
 void increaseBlockSize() {if(currentBlockSize < 32) currentBlockSize = currentBlockSize+4;}
 void decreaseBlockSize() {if(currentBlockSize > 4)currentBlockSize = currentBlockSize-4;}
+void toggleCPUCopy() {isCPUCopy = !isCPUCopy;}
 
 
 //Thread functions
@@ -151,6 +140,7 @@ void endThread() {
     if(isStarted) {
         shouldStop = true;
         serv.running = false;
+        server_finalize(&serv);
     }
     res = MyThread_Join(&testThread, 5 * 1000 * 1000 * 1000LL);
     sprintf(buf, "Thread1 (%li) couldn't be stopped.", (u32)res);
@@ -330,9 +320,13 @@ int isInFCRAM(u32 phys) {
 }
 
 void sendDebug(bool isTop, struct sock_ctx *ctx) {
+    GSPGPU_CaptureInfo displays;
+    GSPGPU_ImportDisplayCaptureInfo(&displays);
+    
     u32 format = isTop ? GPU_FB_TOP_FMT & 7 : GPU_FB_BOTTOM_FMT & 7;
-    u32 bpp = __get_bytes_per_pixel(format);
-    u32 stride = isTop ? GPU_FB_TOP_STRIDE : GPU_FB_BOTTOM_STRIDE;
+    u32 bpp = gspGetBytesPerPixel(format);
+    //u32 stride = isTop ? GPU_FB_TOP_STRIDE : GPU_FB_BOTTOM_STRIDE;
+    u32 stride = displays.screencapture[isTop].framebuf_widthbytesize;
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     char buf[4];
     strncpy(buf, isTop ? "Top" : "Bot", 4);
@@ -348,7 +342,7 @@ void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
     DmaDeviceConfig subcfg;
     subcfg.deviceId = 0xFF;                // Don't care copy from ram
     subcfg.allowedAlignments = 1 | 2 | 4 | 8; // allow all
-    subcfg.burstSize = 0x80;
+    subcfg.burstSize = 0x0;
     subcfg.burstStride = 0;
     subcfg.transferSize = 0x80;
     subcfg.transferStride = 0;
@@ -364,6 +358,7 @@ void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
     u32 pa = Draw_GetCurrentFramebufferAddress(isTop, true);
     uintptr_t addr = 0x0;
 
+    //svcFlushProcessDataCache(CURRENT_PROCESS_HANDLE, (u32)dest, size);
     svcInvalidateProcessDataCache(CURRENT_PROCESS_HANDLE, (u32)dest, size);
     svcCloseHandle(dmaHandle);
 	dmaHandle = 0;
@@ -384,12 +379,11 @@ void copyFrameBufDMA(u8 * dest, bool isTop, u32 size) {
 
 //To skip blank pixels in the Framebuffer (e.g. Mario Kart)
 void skipBytes(u32 screenWidth, u8 *src, u8 *dest, u32 bytesInColumn, u32 blankInColumn) {
-    
     for(u32 i = 0; i < screenWidth; i++) {
         for(u32 j = 0; j < bytesInColumn/4; j++) {
             ((u32*)dest)[j] = ((u32*)src)[j];
         }
-        src += bytesInColumn+blankInColumn; //
+        src += bytesInColumn+blankInColumn;
         dest += bytesInColumn;
     }
 }
@@ -400,20 +394,28 @@ void remotePlay(struct sock_ctx *ctx, bool isTop) {
     u8 *lastFrame = isSecondFrameBuffer ? frameBufferCacheFirst : frameBufferCacheSecond;
 
     u32 format = isTop ? GPU_FB_TOP_FMT & 7 : GPU_FB_BOTTOM_FMT & 7;
-    u32 bpp = __get_bytes_per_pixel(format);
+    u32 bpp = gspGetBytesPerPixel(format);
 
     u32 stride = isTop ? GPU_FB_TOP_STRIDE : GPU_FB_BOTTOM_STRIDE;
 
     u32 screenWidth = isTop ? TOPW : BOTW;
+    //u32 size = displays.screencapture[isTop].framebuf_widthbytesize;
     u32 size = stride * screenWidth;
     u32 bytesInColumn = bpp*HEIGHT;
     u32 blankInColumn = stride - bytesInColumn;
     u32 realSize = bytesInColumn*screenWidth;
 
-    //copyFrameBufCPU(fbref, isTop, size);
-    copyFrameBufDMA(fbref, isTop, size);
     
-    svcSleepThread(400000);
+    if(isCPUCopy) {copyFrameBufCPU(fbref, isTop, size);}
+    else {
+        copyFrameBufDMA(fbref, isTop, size);
+    	DmaState stat = 0;
+	    while(stat != DMASTATE_DONE)
+	    {
+	    	svcGetDmaState(&stat, dmaHandle);
+	    	svcSleepThread(1000);
+	    }
+    }
     
     if(stride != bytesInColumn) {
         skipBytes(screenWidth, fbref, lastFrame, bytesInColumn, blankInColumn);
@@ -490,7 +492,6 @@ int handleData(struct sock_ctx *ctx) {
 //Main Entrypoint
 void commandThreadMain(void) {
     run = true;
-    while (run) {
         Result ret = 0;
         ret = server_init(&serv);
         if(ret != 0) {
@@ -499,7 +500,7 @@ void commandThreadMain(void) {
         }
 
         while(serv.host == 0) {
-            serv.host = gethostid();
+            serv.host = socGethostid();
             svcSleepThread(1 * 1000 * 1000 * 1000LL);
         }
 
@@ -510,10 +511,8 @@ void commandThreadMain(void) {
         serv.alloc = (sock_alloc_func)allocClient;
         serv.free = (sock_free_func)releaseClient;
         svcOpenProcess(&hProcess, 0xf);
-        server_bind(&serv, PORT);
+        ret = server_bind(&serv, PORT);
         server_run(&serv);
-        server_finalize(&serv);
-    }
 }
 
 

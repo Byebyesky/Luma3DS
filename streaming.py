@@ -13,7 +13,7 @@ TOPSIZE = TOPWIDTH*DSSCREENHEIGHT
 BOTSIZE = BOTTOMWIDTH*DSSCREENHEIGHT
 IMGTOP = (DSSCREENHEIGHT,TOPWIDTH)
 IMGBOT = (DSSCREENHEIGHT,BOTTOMWIDTH)
-IP = "192.168.178.45"
+IP = "192.168.3.72"
 PORT = 4957
 HEADERSIZE = 9
 MAGIC = b'\x13\x37'
@@ -154,7 +154,7 @@ def prepareImage(imgData, captureTop, bpp):
     
     bufdat = img.tobytes()
     imgBlit = ''
-    
+
     if bpp == 1:
         imgBlit = pygame.image.fromstring(bufdat, img.size, 'P')
         imgBlit.set_palette(palette)
@@ -235,7 +235,7 @@ if len(sys.argv) >= 1:
                             if event.key == pygame.K_LEFT:
                                 toggle = not toggle
                                 print("Alternate polling: ", toggle)
-                            if event.key == pygame.K_KP_PLUS:
+                            if event.key == pygame.K_PLUS:
                                 if SCALED == False:
                                     WIDTH = int(WIDTH*2)
                                     HEIGHT = int(HEIGHT*2)
@@ -252,6 +252,7 @@ if len(sys.argv) >= 1:
                             if event.key == pygame.K_DOWN:
                                 toggle = False
                                 captureTop = False
+                                print("Setting captureTop: ", captureTop)
                             if event.key == pygame.K_s:
                                 stop = not stop
                                 print("Stop: ", stop)
